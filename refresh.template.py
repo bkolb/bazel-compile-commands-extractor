@@ -740,7 +740,7 @@ _get_files.extensions_to_language_args = { # Note that clangd fails on the --lan
 }
 _get_files.extensions_to_language_args = {ext : flag for exts, flag in _get_files.extensions_to_language_args.items() for ext in exts} # Flatten map for easier use
 _get_files.c_family_source_extensions = _get_files.c_source_extensions + _get_files.cpp_source_extensions + _get_files.objc_source_extensions + _get_files.objcpp_source_extensions + _get_files.cuda_source_extensions + _get_files.opencl_source_extensions + _get_files.openclxx_source_extensions + _get_files.assembly_source_extensions + _get_files.assembly_needing_c_preprocessor_source_extensions
-_get_files.source_extensions = _get_files.c_families_source_extensions + '.swift'
+_get_files.source_extensions = _get_files.c_family_source_extensions + ('.swift',)
 
 
 @functools.lru_cache(maxsize=None)
@@ -774,12 +774,13 @@ def _get_apple_platform(compile_action):
         if match:
             return match.group(1)
     if getattr(compile_action, 'environmentVariables', None):
-         match = next(
-             filter(lambda x: x.key == "APPLE_SDK_PLATFORM", compile_action.environmentVariables),
-             None
-         )
-         if match:
-             return match.value
+         return compile_action.environmentVariables["APPLE_SDK_PLATFORM"]
+        #  match = next(
+        #      filter(lambda x: x.key == "APPLE_SDK_PLATFORM", compile_action.environmentVariables),
+        #      None
+        #  )
+        #  if match:
+        #      return match.value
     return None
 
 
@@ -796,9 +797,11 @@ def _apple_platform_patch(compile_action):
 
     This function has fixes specific to Apple platforms, but you should call it on all platforms. It'll determine whether the fixes should be applied or not.
     """
-    compile_args = compile_action.arguments
     # Bazel internal environment variable fragment that distinguishes Apple platforms that need unwrapping.
         # Note that this occurs in the Xcode-installed wrapper, but not the CommandLineTools wrapper, which works fine as is.
+    
+    compile_args = compile_action.arguments
+    
     if any('__BAZEL_XCODE_' in arg for arg in compile_args):
         # Undo Bazel's Apple platform compiler wrapping.
         # Bazel wraps the compiler as `external/local_config_cc/wrapped_clang` and exports that wrapped compiler in the proto. However, we need a clang call that clangd can introspect. (See notes in "how clangd uses compile_commands.json" in ImplementationReadme.md for more.)
@@ -1171,12 +1174,12 @@ def _get_command_for_files(compile_action):
         compile_action.environmentVariables['PATH'] = os.environ['PATH']
 
     # Patch command by platform, revealing any hidden arguments.
-    compile_action.arguments = _apple_platform_patch(compile_action.arguments)
+    compile_action.arguments = _apple_platform_patch(compile_action)
     compile_action.arguments = _emscripten_platform_patch(compile_action)
     compile_action.arguments = _swift_patch(compile_action)
 
     # Android and Linux and grailbio LLVM toolchains: Fine as is; no special patching needed.
-    compile_action.arguments = _all_platform_patch(compile_action.arguments)
+    compile_action.arguments = _all_platform_patch(compile_action)
 
     source_files, header_files = _get_files(compile_action)
 
